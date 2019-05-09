@@ -7,8 +7,8 @@ from scipy.optimize import curve_fit
 
 sns.set_style('white')
 sns.set_palette(sns.hls_palette(6, h=0.5,l=0.4,s=0.5))
-font = {'size': 16}
-plt.rc('font',**font)
+font = {'size': 18}
+plt.rc('font', **font)
 
 num_dict = {'0': '$_{0}$', '1': '$_{1}$', '2': '$_{2}$', '3': '$_{3}$', '4': '$_{4}$',
             '5': '$_{5}$', '6': '$_{6}$', '7': '$_{7}$', '8': '$_{8}$', '9': '$_{9}$',
