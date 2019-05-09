@@ -120,7 +120,7 @@ class PES:
             return (self.De * (1 - np.exp(-self.a * (r - self.dH)))**2 + self.gH)
 
     def morse_norm(self, r):
-        return ((1 - np.exp(-self.a * r))**2)
+        return (1 - np.exp(-self.a * r))**2
 
     def plot_morse(self):
         fig, ax = plt.subplots()
@@ -134,7 +134,7 @@ class PES:
         ax.set_ylabel('Energy')
         ax.legend()
         ax.set_title(self.donor.translate(SUB) + ' morse fit')
-        ax.set_ylim((-1, 7))
+        ax.set_ylim((-7, 7))
         plt.show()
         return None
 
@@ -187,8 +187,8 @@ class Energy:
         val, idx = min((val, idx) for (idx, val) in enumerate(yint_list))
         self.xint = xint_list[idx]
         self.yint = val
-        Ea_left = val + self.left.De
-        Ea_right = val + self.right.De
+        self.Ea_left = val + self.left.De
+        self.Ea_right = val + self.right.De
 
         if plot:
             fig, ax = plt.subplots(figsize=(8, 5))
@@ -196,98 +196,58 @@ class Energy:
             # Plot diabatic curves and intercept
             ax.plot(self.x, a, label='dia-left')
             ax.plot(self.x, b, label='dia-right')
-            ax.plot([self.xint], [self.yint], marker='o', markersize=8.0,
-                    markeredgecolor='b', ls='',
-                    label='E$^{a}_{left}$ = %5.2f eV' % Ea_left)
+            ax.plot([self.xint], [self.yint], marker='o', markersize=6.0,
+                    c='grey', markeredgecolor='k', ls='',
+                    label='E$^{a}_{left}$ = %5.2f eV' % self.Ea_left)
+            ax.plot([self.xint], [self.yint], marker='o', markersize=6.0,
+                    c='grey', markeredgecolor='k', ls='',
+                    label='E$^{a}_{right}$ = %5.2f eV' % self.Ea_right)
 
             # Plot adiabatic curves and intercept
             if adiabatic:
                 ax.plot(self.r_corr, self.adia_left, label='adia-left')
                 ax.plot(self.r_corr, self.adia_right, label='adia-right')
-                ax.plot([self.adia_xint], [self.adia_yint], marker='o', markersize=8.0,
-                        markeredgecolor='b', ls='',
-                        label='E$^{a}_{left}$ = %5.2f eV' % (self.adia_yint+self.left.De))
+                ax.plot([self.xint_ad], [self.yint_ad], marker='o', markersize=6.0,
+                        c='w', markeredgecolor='b', ls='',
+                        label='E$^{a}_{left}$ = %5.2f eV' % (self.Ea_ad_left))
+                ax.plot([self.xint_ad], [self.yint_ad], marker='o', markersize=6.0,
+                        c='w', markeredgecolor='b', ls='',
+                        label='E$^{a}_{right}$ = %5.2f eV' % (self.Ea_ad_right))
 
             ax.set_xlabel('Distance to metal surface (Å)')
             ax.set_ylabel('Energy (eV)')
 
-            ax.set_xlim((0.5, self.xint*2))
-            ax.set_ylim((-abs(self.yint*5), abs(self.yint*4)))
+            ax.set_xlim((0.5, 4.))
+            ax.set_ylim((-8, 4))
 
             ax.legend(loc=2, bbox_to_anchor=(1.0, 1.0))
             plt.show()
-        return ((self.xint, self.yint))
+        return (self.xint, self.yint)
 
     def _adiabatic_correction(self):
         # Get Gamma values between 0 and 1 for all distances of interest
         gamma_left = self.left.morse_norm(self.r_corr - self.left.dH)       # 0-->0.66
         gamma_right = self.right.morse_norm(self.right.dH - self.r_corr)    # 0.66-->0
-        print(gamma_right)
 
         # Morse values
-        e_dia_left = gamma_left * self.left.De + self.left.gH
-        e_dia_right = gamma_right * self.right.De + self.right.gH
+        E_stretch_left = gamma_left * self.left.De + self.left.gH
+        E_stretch_right = gamma_right * self.right.De + self.right.gH
 
-        # Frank's formula
-        self.adia_left = e_dia_left + (1-gamma_left) * self.right.De + self.right.gH
-        self.adia_right = e_dia_right + (1-gamma_right) * self.left.De + self.left.gH
+        # E_hyb
+        self.adia_left = E_stretch_left + gamma_left * (1-gamma_right) * (self.right.gH - E_stretch_left)
+        self.adia_right = E_stretch_right + gamma_right * (1-gamma_left) * (self.left.gH - E_stretch_right)
 
         # Find transition state
-        self.adia_yint = max(self.adia_left)
-        self.adia_xint = self.r_corr[np.argwhere(self.adia_left == self.adia_yint)].flatten()[0]
+        xts_ad = list(self.r_corr[np.argwhere(np.diff(np.sign(self.adia_left - self.adia_right))).flatten()])
+        yts_ad = list(self.adia_left[np.argwhere(np.diff(np.sign(self.adia_left - self.adia_right))).flatten()])
+        val, idx = min((val, idx) for (idx, val) in enumerate(yts_ad))
+        self.xint_ad = xts_ad[idx]
+        self.yint_ad = val
+
+        self.Ea_ad_left = self.yint_ad + self.left.De
+        self.Ea_ad_right = self.yint_ad + self.right.De
 
         return None
-
-
-
-#%%
-# Set some paths
-datapath = os.getcwd()+'/5_diabatic_barriers/plots/1_H_H2O/1_H_metal/'
-waterpath = '~/work/projects/5_diabatic_barriers/plots/1_H_H2O/2_free_standing/'
-figpath = '/Users/schlexer/work/projects/5_diabatic_barriers/pictures/'
-
-#%%
-pes1 = PES(datapath + 'part/Pt.tsv', donor='left', dHeq=1.56)
-pes2 = PES(datapath + 'part/Au.tsv', donor='left', dHeq=2.6)
-e = Energy(pes1, pes2)
-e.interception(adiabatic=True, plot=True)
-
-#%%
-
-dfn = pd.read_csv(datapath+'adiabatic/1_PtPt/adiabatic_top_Pt.tsv', sep='\t')
-dfn.columns = ['distance', 'E_tot']
-deq_ad = dfn.distance[0]
-dfn.distance = dfn.distance - deq_ad
-
-dfb = pd.read_csv(datapath+'part/Pt.tsv', sep='\t', header=None)
-dfb.columns = ['distance', 'E_tot']
-dfb.E_tot = dfb.E_tot - dfb.E_tot.min()
-# print(dfb.head())
-deq_dia = 1.567
-
-X = []
-y = []
-pes1 = PES(datapath+'part/Pt.tsv', donor='left',  dHeq=deq_dia)
-for d in np.linspace(0,16,100):
-    pes2 = PES(datapath+'part/Pt.tsv', donor='left',  dHeq=deq_ad+d)
-    e = Energy(pes1,pes2)
-    X.append(e.adia_xint)
-    e.interception(adiabatic=True, plot=False)
-    y.append(e.adia_yint)
-X = np.array(X) - deq_ad
-fig, ax = plt.subplots(figsize=(5,5))
-ax.plot(dfn.distance,dfn.E_tot, label='adiabatic')
-ax.plot(dfb.distance,dfb.E_tot, label='diabatic')
-ax.plot(X,y, label='adia-pred')
-ax.set_xlabel('Distance d(H-Pt) - d$_{eq}$ (Å)')
-ax.set_ylabel('E$_{rel}$ (eV)')
-ax.set_ylim((-0.5,4))
-ax.legend()
-plt.tight_layout()
-fig.savefig(figpath+'PtPt_diabatic_vs_adiabatic.png')
-plt.show()
-
-#%%
 
 
 if __name__ == '__main__':
@@ -295,51 +255,3 @@ if __name__ == '__main__':
 
 
 
-#%%
-pes1 = PES(datapath + 'part/Pt.tsv', donor='left', dHeq=1.56)
-pes2 = PES(datapath + 'part/Pt.tsv', donor='left', dHeq=2.6)
-e = Energy(pes1, pes2)
-e.interception(adiabatic=True, plot=True)
-
-#%%
-pes1 = PES(datapath + 'part/Pt.tsv', donor='left', dHeq=1.56)
-pes2 = PES(waterpath + 'H3O+.tsv', donor='right', dHeq=2.6)
-e = Energy(pes1, pes2)
-e.interception(adiabatic=True, plot=True)
-
-#%%
-
-dfn = pd.read_csv(datapath+'adiabatic/1_PtPt/adiabatic_top_Pt.tsv', sep='\t')
-dfn.columns = ['distance', 'E_tot']
-deq_ad = dfn.distance[0]
-dfn.distance = dfn.distance - deq_ad
-
-dfb = pd.read_csv(datapath+'part/Pt.tsv', sep='\t', header=None)
-dfb.columns = ['distance', 'E_tot']
-dfb.E_tot = dfb.E_tot - dfb.E_tot.min()
-# print(dfb.head())
-deq_dia = 1.567
-
-X = []
-y = []
-pes1 = PES(datapath+'part/Pt.tsv', donor='left',  dHeq=deq_dia)
-for d in np.linspace(0,16,100):
-    pes2 = PES(datapath+'part/Pt.tsv', donor='left',  dHeq=deq_ad+d)
-    e = Energy(pes1,pes2)
-    X.append(e.adia_xint)
-    e.interception(adiabatic=True, plot=False)
-    y.append(e.adia_yint)
-X = np.array(X) - deq_ad
-fig, ax = plt.subplots(figsize=(5,5))
-ax.plot(dfn.distance,dfn.E_tot, label='adiabatic')
-ax.plot(dfb.distance,dfb.E_tot, label='diabatic')
-ax.plot(X,y, label='adia-pred')
-ax.set_xlabel('Distance d(H-Pt) - d$_{eq}$ (Å)')
-ax.set_ylabel('E$_{rel}$ (eV)')
-ax.set_ylim((-0.5,4))
-ax.legend()
-plt.tight_layout()
-fig.savefig(figpath+'PtPt_diabatic_vs_adiabatic.png')
-plt.show()
-
-#%%
