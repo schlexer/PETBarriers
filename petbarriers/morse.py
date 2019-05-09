@@ -38,25 +38,38 @@ def morse_diff(a,b,r):
 
 
 class PES:
-    """Handle data from a proton donor.
+    """Set up a 1D potential energy surface (PES) for a state (hydrogen donor).
     Args:
-        filepath (str) : path to data.
-        plot: Whether to plot data after read in.
-
+        filepath (str) : Path to data to which the morse potential will be fitted.
+        plot: Whether to plot normalized data after read in.
+        donor: 'left' or 'right, determines curve symmetry:
+                If the transferred hydrogen is above the donor: 'left'.
+                If the transferred hydrogen is above the donor: 'right'.
+        dHeq: Equilibrium distance between hydrogen and donor in Angstroem.
+        gH_rel: Relative Gibbs free energy of reference H_gas or (H+ + e-) in eV.
     Attributes:
-        donor: 'left' or right, determines curve position.
-        df: dataframe with data
-
+        filepath: Path to data.
+        donor: left or right.
+        dHeq: see attributes dHeq.
+        gH: State absolute potential well depth in eV.
+        De: Depth of morse potential when gH is 0 eV.
+        df: Normalized distance and energy values.
+        a: Morse potential constant.
+        morse_fit_error: Error due to morse fit.
     """
 
-    def __init__(self, filepath, donor='left', dHeq=1., gH=0., plot=False):
+    def __init__(self, filepath, donor='left', dHeq=1., gH_rel=0., plot=False):
         self.filepath = filepath
         self.donor = donor
-        self.dH = dHeq
+        self.dHeq = dHeq
         self.preprocess()
         self.normalize()
         self.fit_morse()
-        self.gH = gH - self.De
+        self.gH = gH_rel - self.De
+        self.df = None
+        self.De = None
+        self.a = None
+        self.morse_fit_error = None
 
         if plot:
             # Plot proton donor data.
@@ -69,6 +82,8 @@ class PES:
             plt.show()
 
     def preprocess(self):
+        """Preprocesses the data by smoothening vacuum energy fluctuations and computing De.
+        """
         # Read in and preprocess data
         df = pd.read_csv(self.filepath, sep='\t', header=None)
         df.columns = ['distance', 'E_tot']
@@ -86,6 +101,9 @@ class PES:
         return None
 
     def normalize(self):
+        """Normalized the data by normalizing the total energy to energy/De (eV) (0--1 eV).
+        The distance is transformed to distance relative to equilibrium distance.
+        """
         df = self.df.copy(deep=True)
 
         # Min-Max scaling to 0-->1
@@ -99,35 +117,38 @@ class PES:
             df = df[df.distance < dmax]
         else:
             df.distance = df.distance - dmin
-
         self.df = df
         return None
 
     def fit_morse(self):
+        """Fits a morse potential to the normalized data."""
         # Fit to get a
         popt, pcov = curve_fit(morse_norm, self.df.distance, self.df.E_tot)
         perr = np.sqrt(np.diag(pcov))
         self.a = popt
-        self.leftrror = perr
+        self.morse_fit_error = perr
 
     def morse(self, r=None):
+        """Returns absolute morse potential in eV."""
         # Define the morse potential for this proton donor.
         if r is None:
             r = self.df.distance
         if not self.donor == 'left':
-            return (self.De * (1 - np.exp(-self.a * (self.dH - r)))**2 + self.gH)
+            return (self.De * (1 - np.exp(-self.a * (self.dHeq - r)))**2 + self.gH)
         else:
-            return (self.De * (1 - np.exp(-self.a * (r - self.dH)))**2 + self.gH)
+            return (self.De * (1 - np.exp(-self.a * (r - self.dHeq)))**2 + self.gH)
 
     def morse_norm(self, r):
+        """Returns normalized morse potential."""
         return (1 - np.exp(-self.a * r))**2
 
     def plot_morse(self):
+        """Plots morse potential."""
         fig, ax = plt.subplots()
         if self.donor == 'left':
-            ax.plot(self.df.distance + self.dH, self.df.E_tot * self.De + self.gH)
+            ax.plot(self.df.distance + self.dHeq, self.df.E_tot * self.De + self.gH)
         else:
-            ax.plot(self.dH - self.df.distance, self.df.E_tot * self.De + self.gH)
+            ax.plot(self.dHeq - self.df.distance, self.df.E_tot * self.De + self.gH)
         ax.plot(self.df.distance, self.morse(), '--',
                 label='Morse: a=%5.3f' % tuple(self.a))
         ax.set_xlabel('distance')
@@ -139,6 +160,7 @@ class PES:
         return None
 
     def _smoothen(self, df):
+        """Helpter funciton to smoothen out vacuum energy fluctuations (DFT problem)."""
         df_new = df.copy(deep=True)
         for idx, entry in enumerate(df.E_tot):
             if idx == 0:
@@ -149,31 +171,46 @@ class PES:
                     df_new = df_new.drop([idx], axis=0)
                 previos_entry = entry
         df_new = df_new.reset_index(drop=True)
-        return (df_new)
+        return df_new
 
 #%%
 class Energy:
-    """Compute diabatic and adiabatic energy curves.
+    """Compute diabatic and adiabatic energy interceptions (activation energies).
     Args:
         pes1 and pes2 : PES objects.
+    Attributes:
+        left: Left state
+        right: Right state (Note that this has nothing to do
+            with the orientation of the fitting data as in PES,
+            but simply denotes where to position the morse potential.
+        x: Distance points
+        r_corr: Distance points between the two states
+        morse_left: Returns left morse energy values given distance values.
+        morse_right: Returns right morse energy values given distance values.
+        Ea_left: Forward diabatic barrier in eV.
+        Ea_right: Backwards diabatic barrier in eV.
+        xint: Distance between hydrogen and left state at diabatic transition state in Angstroem.
+        Ea_ad_left: Forward adiabatic barrier in eV.
+        Ea_ad_right: Backwards adiabatic barrier in eV.
+        xint_ad: Distance between hydrogen and left state at adiabatic transition state in Angstroem.
     """
 
     def __init__(self, left, right):
         self.x = np.linspace(-10., 10., 1000)
         self.left = left
         self.right = right
-        self.r_corr = np.linspace(self.left.dH, self.right.dH, 1000)
+        self.r_corr = np.linspace(self.left.dHeq, self.right.dHeq, 1000)
         self._adiabatic_correction()
 
     def morse_left(self, r=None):
         if r is None:
             r = self.x
-        return (self.left.De * (1 - np.exp(-self.left.a * (r - self.left.dH))) ** 2 + self.left.gH)
+        return (self.left.De * (1 - np.exp(-self.left.a * (r - self.left.dHeq))) ** 2 + self.left.gH)
 
     def morse_right(self, r=None):
         if r is None:
             r = self.x
-        return (self.right.De * (1 - np.exp(-self.right.a * (self.right.dH - r))) ** 2 + self.right.gH)
+        return (self.right.De * (1 - np.exp(-self.right.a * (self.right.dHeq - r))) ** 2 + self.right.gH)
 
     def interception(self, adiabatic=False, plot=False):
         a = self.morse_left()
@@ -214,7 +251,7 @@ class Energy:
                         c='w', markeredgecolor='b', ls='',
                         label='E$^{a}_{right}$ = %5.2f eV' % (self.Ea_ad_right))
 
-            ax.set_xlabel('Distance to metal surface (Å)')
+            ax.set_xlabel('Distance to right state (Å)')
             ax.set_ylabel('Energy (eV)')
 
             ax.set_xlim((0.5, 4.))
@@ -226,8 +263,8 @@ class Energy:
 
     def _adiabatic_correction(self):
         # Get Gamma values between 0 and 1 for all distances of interest
-        gamma_left = self.left.morse_norm(self.r_corr - self.left.dH)       # 0-->0.66
-        gamma_right = self.right.morse_norm(self.right.dH - self.r_corr)    # 0.66-->0
+        gamma_left = self.left.morse_norm(self.r_corr - self.left.dHeq)       # 0-->0.66
+        gamma_right = self.right.morse_norm(self.right.dHeq - self.r_corr)    # 0.66-->0
 
         # Morse values
         E_stretch_left = gamma_left * self.left.De + self.left.gH
