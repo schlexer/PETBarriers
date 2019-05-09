@@ -66,17 +66,13 @@ class PES:
         self.normalize()
         self.fit_morse()
         self.gH = gH_rel - self.De
-        self.df = None
-        self.De = None
-        self.a = None
-        self.morse_fit_error = None
 
         if plot:
             # Plot proton donor data.
             fig, ax = plt.subplots()
             ax.plot(self.df.distance, self.df.E_tot)
-            ax.set_xlabel('distance')
-            ax.set_ylabel('Energy')
+            ax.set_xlabel('Distance d-d$_eq$ (Å)')
+            ax.set_ylabel('Energy E/D$_{e}$')
             ax.legend()
             ax.set_title(self.donor.translate(SUB) + ' normalized PES')
             plt.show()
@@ -151,8 +147,8 @@ class PES:
             ax.plot(self.dHeq - self.df.distance, self.df.E_tot * self.De + self.gH)
         ax.plot(self.df.distance, self.morse(), '--',
                 label='Morse: a=%5.3f' % tuple(self.a))
-        ax.set_xlabel('distance')
-        ax.set_ylabel('Energy')
+        ax.set_xlabel('Distance d (Å)')
+        ax.set_ylabel('Energy E (eV)')
         ax.legend()
         ax.set_title(self.donor.translate(SUB) + ' morse fit')
         ax.set_ylim((-7, 7))
@@ -251,7 +247,7 @@ class Energy:
                         c='w', markeredgecolor='b', ls='',
                         label='E$^{a}_{right}$ = %5.2f eV' % (self.Ea_ad_right))
 
-            ax.set_xlabel('Distance to right state (Å)')
+            ax.set_xlabel('Distance to right hydrogen donor (Å)')
             ax.set_ylabel('Energy (eV)')
 
             ax.set_xlim((0.5, 4.))
@@ -259,7 +255,7 @@ class Energy:
 
             ax.legend(loc=2, bbox_to_anchor=(1.0, 1.0))
             plt.show()
-        return (self.xint, self.yint)
+        return self.xint, self.yint
 
     def _adiabatic_correction(self):
         # Get Gamma values between 0 and 1 for all distances of interest
